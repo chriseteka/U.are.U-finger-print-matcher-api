@@ -28,6 +28,11 @@ public class AppController {
     private AppServices appServices;
 
 
+    @GetMapping(path = "/")
+    public String index(){
+        return "index";
+    }
+
     @GetMapping(path = "/connect/reader")
     @ApiOperation(value = "Try's To Connect To A Connected Finger Print Reader", response = Boolean.class, httpMethod = "GET",
             notes = "Finger Print can only be scanned from a U.are.U Scanner")
