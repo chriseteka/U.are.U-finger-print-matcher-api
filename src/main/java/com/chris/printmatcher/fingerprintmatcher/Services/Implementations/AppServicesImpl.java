@@ -5,6 +5,7 @@ import com.chris.printmatcher.fingerprintmatcher.Configuration.ReaderSupportConf
 import com.chris.printmatcher.fingerprintmatcher.Model.AppUsers;
 import com.chris.printmatcher.fingerprintmatcher.Model.UsersDetails;
 import com.chris.printmatcher.fingerprintmatcher.Repositories.AppUsersRepo;
+import com.chris.printmatcher.fingerprintmatcher.Repositories.UsersPrintTemplatesRepo;
 import com.chris.printmatcher.fingerprintmatcher.Services.AppServices;
 import com.digitalpersona.uareu.Reader;
 import com.digitalpersona.uareu.ReaderCollection;
@@ -22,7 +23,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.Vector;
 
 @Service
@@ -36,13 +36,24 @@ public class AppServicesImpl implements AppServices {
     @Autowired
     private AppUsersRepo usersRepo;
 
+    @Autowired
+    private UsersPrintTemplatesRepo printRepo;
+
+    //Make this list global, and static, load up all print details to the list on startup
+    public static List<UsersDetails> usersDetailsList = new ArrayList<>();
+
     @Override
     public String createUser(AppUsers user) {
 
-        if (null != user){
+        if (null != user) {
 
             user.setLeftThumb(Base64.decodeBase64(user.getLeftThumbString().getBytes()));
             user.setRightThumb(Base64.decodeBase64(user.getRightThumbString().getBytes()));
+
+            //Check if same finger print was entered
+            if (sameFingerEntered(user.getRightThumb(), user.getLeftThumb()))
+                return "Same finger entered, please register two different fingers.";
+
 
             //Check if the user id exist in the DB
             if (null != usersRepo.findDistinctByUserId(user.getUserId()))
@@ -54,9 +65,32 @@ public class AppServicesImpl implements AppServices {
 
             AppUsers savedUser = usersRepo.save(user);
 
-            if (null != savedUser) return "User Created Successfully";
+            if (null != savedUser) {
+
+                List<UsersDetails> userPrintDetails = new ArrayList<>();
+
+                userPrintDetails.add(new UsersDetails(savedUser.getUserId(), getTemplateFromPrint(savedUser.getLeftThumb()).serialize()));
+                userPrintDetails.add(new UsersDetails(savedUser.getUserId(), getTemplateFromPrint(savedUser.getRightThumb()).serialize()));
+
+                //Mark with at cacheable using redis implementation
+                if(!printRepo.saveAll(userPrintDetails).isEmpty()) {
+
+                    userPrintDetails.forEach(userPrint -> usersDetailsList
+                            .add(new UsersDetails(userPrint.getName(), new FingerprintTemplate().deserialize(userPrint.getFingerPrintString()))));
+                    return "User Created Successfully";
+                }
+            }
         }
         return "An Unknown Error Occurred, Try Again";
+    }
+
+    //Method to check if same finger was entered.
+    private boolean sameFingerEntered(byte[] rightThumb, byte[] leftThumb) {
+
+        FingerprintMatcher matcher = new FingerprintMatcher().index(getTemplateFromPrint(rightThumb));
+        double matchDegree = matcher.match(getTemplateFromPrint(leftThumb));
+
+        return matchDegree > 75;
     }
 
     @Override
@@ -67,10 +101,9 @@ public class AppServicesImpl implements AppServices {
         m_readerList = new ArrayList();
 
         //acquire available readers
-        try{
+        try {
             m_collection.GetReaders();
-        }
-        catch(UareUException e) {
+        } catch (UareUException e) {
             MessageBox.DpError("ReaderCollection.GetReaders()", e);
         }
 
@@ -104,12 +137,11 @@ public class AppServicesImpl implements AppServices {
     @Override
     public BufferedImage scanFinger(String fingerToScan) {
 
-        if (-1 == indexOfSupportedReader){
+        if (-1 == indexOfSupportedReader) {
 
-            try{
+            try {
                 m_collection = UareUGlobal.GetReaderCollection();
-            }
-            catch(UareUException e) {
+            } catch (UareUException e) {
 
                 MessageBox.DpError("UareUGlobal.getReaderCollection()", e);
                 return null;
@@ -132,12 +164,22 @@ public class AppServicesImpl implements AppServices {
     @Override
     public AppUsers verifyUser(byte[] fingerPrintData) {
 
-        //SOURCE AFIS FINGER PRINT COMPARING ALGORITHM WAS USED HERE FOR 1:N FINGERS COMPARISON
-        List<UsersDetails> usersDetailsList = new ArrayList<>();
-        for(AppUsers users : usersRepo.findAll()){
+        if (usersDetailsList.isEmpty()) {
 
-            usersDetailsList.add(new UsersDetails(users.getId(), users.getUserId(), getTemplateFromPrint(users.getLeftThumb())));
-            usersDetailsList.add(new UsersDetails(users.getId(), users.getUserId(), getTemplateFromPrint(users.getRightThumb())));
+            usersRepo.findAll().forEach(user -> {
+
+                usersDetailsList.add(new UsersDetails(user.getUserId(), getTemplateFromPrint(user.getRightThumb()).serialize()));
+                usersDetailsList.add(new UsersDetails(user.getUserId(), getTemplateFromPrint(user.getLeftThumb()).serialize()));
+            });
+
+            printRepo.saveAll(usersDetailsList);
+
+            usersDetailsList.clear();
+
+            printRepo.findAll()
+                    .forEach(usersDetails -> usersDetailsList
+                            .add(new UsersDetails(usersDetails.getName(), new FingerprintTemplate().deserialize(usersDetails.getFingerPrintString()))));
+
         }
 
         UsersDetails matchedUser = null;
@@ -157,12 +199,8 @@ public class AppServicesImpl implements AppServices {
 
         double threshold = 75;
 
-        if (null != matchedUser){
+        if (null != matchedUser && high > threshold) return usersRepo.findDistinctByUserId(matchedUser.getName());
 
-            Optional<AppUsers> userFound = usersRepo.findById(matchedUser.getId());
-
-            if (userFound.isPresent()) return high >= threshold ? userFound.get() : null;
-        }
         return null;
     }
 
@@ -171,7 +209,7 @@ public class AppServicesImpl implements AppServices {
 
         BufferedImage scanImage = scanFinger("ANY FINGER");
 
-        if (null != scanImage){
+        if (null != scanImage) {
 
             ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
             ImageIO.write(scanImage, "jpg", byteArrayOutputStream);
