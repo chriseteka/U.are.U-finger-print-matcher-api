@@ -17,6 +17,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Base64;
 
+@CrossOrigin(origins = "*", allowedHeaders = "*")
 @RestController
 @RequestMapping("/fingerprint")
 @Api(value = "FIG_MATCHER", description = "Chris Finger Print Matcher API for Desktop and Web App Developers")
@@ -28,11 +29,13 @@ public class AppController {
     private AppServices appServices;
 
 
+    @CrossOrigin
     @GetMapping(path = "/")
     public String index(){
         return "index";
     }
 
+    @CrossOrigin
     @GetMapping(path = "/connect/reader")
     @ApiOperation(value = "Try's To Connect To A Connected Finger Print Reader", response = Boolean.class, httpMethod = "GET",
             notes = "Finger Print can only be scanned from a U.are.U Scanner")
@@ -51,6 +54,7 @@ public class AppController {
     }
 
 
+    @CrossOrigin
     @GetMapping(path = "/scan/{fingerToScan}")
     @ApiOperation(value = "Scan Finger Print API", response = Base64.Encoder.class, httpMethod = "GET",
             notes = "Finger Print can only be scanned from a U.are.U Scanner")
@@ -70,6 +74,7 @@ public class AppController {
     }
 
 
+    @CrossOrigin
     @PostMapping(path = "/create/{usersUniqueId}")
     @ApiOperation(value = "Create New User API", response = String.class, httpMethod = "POST",
             notes = "Finger Print can only be scanned from a U.are.U Scanner")
@@ -84,6 +89,7 @@ public class AppController {
     }
 
 
+    @CrossOrigin
     @PostMapping(path = "/verify/print")
     @ApiOperation(value = "Compares Input Finger Print With already Existing ones", response = String.class, httpMethod = "POST",
             notes = "Finger Print can only be scanned from a U.are.U Scanner")
@@ -101,6 +107,7 @@ public class AppController {
     }
 
 
+    @CrossOrigin
     @GetMapping(path = "/scan/verify")
     @ApiOperation(value = "Scan Finger Print And Runs Comparison API", response = String.class, httpMethod = "GET",
             notes = "Finger Print can only be scanned from a U.are.U Scanner")
